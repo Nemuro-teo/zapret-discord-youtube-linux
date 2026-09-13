@@ -116,8 +116,10 @@ fi
 
 # 5. Установка systemd-службы и симлинка CLI
 echo -e "${BOLD}[5/6] Настройка службы systemd и CLI...${NC}"
-cp "$SCRIPT_DIR/systemd/zapret-linux.service" /etc/systemd/system/zapret-linux.service
+ln -sf "$TARGET_DIR/zapret-cli" /usr/bin/zapret-cli
 ln -sf "$TARGET_DIR/zapret-cli" /usr/local/bin/zapret-cli
+chmod +x "$TARGET_DIR/zapret-cli" 2>/dev/null || true
+cp "$SCRIPT_DIR/systemd/zapret-linux.service" /etc/systemd/system/zapret-linux.service
 
 systemctl daemon-reload
 systemctl enable zapret-linux.service
