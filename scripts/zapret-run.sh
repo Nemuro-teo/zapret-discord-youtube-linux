@@ -10,6 +10,16 @@ if [ ! -x "$BIN/nfqws" ]; then
     exit 1
 fi
 
+# Загрузка модулей ядра для NFQUEUE и фаервола
+modprobe nfnetlink_queue 2>/dev/null || true
+modprobe xt_NFQUEUE 2>/dev/null || true
+modprobe xt_multiport 2>/dev/null || true
+modprobe xt_mark 2>/dev/null || true
+
+# Настройки сетевого стека для корректной десинхронизации
+sysctl -w net.ipv4.tcp_timestamps=1 >/dev/null 2>&1 || true
+sysctl -w net.netfilter.nf_conntrack_tcp_be_liberal=1 >/dev/null 2>&1 || true
+
 # 1. Настройка Game Filter (игровой фильтр) ДО загрузки стратегии
 GAME_FILTER_FILE="$BASE_DIR/.game_filter"
 GAME_FILTER_TCP="12"

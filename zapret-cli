@@ -337,6 +337,37 @@ run_quick_probe() {
     local r_y2=$(cat "$t_dir/y2" 2>/dev/null)
     rm -rf "$t_dir"
 
+    # Если стандартный запрос заблокирован (например, из-за IPv6), проверяем IPv4
+    if [[ "$r_d1" != OK* ]] || [[ "$r_d2" != OK* ]]; then
+        local t4_dir
+        t4_dir=$(mktemp -d)
+        test_endpoint "https://discord.com" "-4" > "$t4_dir/d1" &
+        test_endpoint "https://gateway.discord.gg" "-4" > "$t4_dir/d2" &
+        wait
+        local r_d1_4=$(cat "$t4_dir/d1" 2>/dev/null)
+        local r_d2_4=$(cat "$t4_dir/d2" 2>/dev/null)
+        rm -rf "$t4_dir"
+        if [[ "$r_d1_4" == OK* ]] && [[ "$r_d2_4" == OK* ]]; then
+            r_d1="$r_d1_4"
+            r_d2="$r_d2_4"
+        fi
+    fi
+
+    if [[ "$r_y1" != OK* ]] || [[ "$r_y2" != OK* ]]; then
+        local ty4_dir
+        ty4_dir=$(mktemp -d)
+        test_endpoint "https://www.youtube.com" "-4" > "$ty4_dir/y1" &
+        test_endpoint "https://redirector.googlevideo.com" "-4" > "$ty4_dir/y2" &
+        wait
+        local r_y1_4=$(cat "$ty4_dir/y1" 2>/dev/null)
+        local r_y2_4=$(cat "$ty4_dir/y2" 2>/dev/null)
+        rm -rf "$ty4_dir"
+        if [[ "$r_y1_4" == OK* ]] && [[ "$r_y2_4" == OK* ]]; then
+            r_y1="$r_y1_4"
+            r_y2="$r_y2_4"
+        fi
+    fi
+
     local d_ok=0
     local y_ok=0
     [[ "$r_d1" == OK* ]] && [[ "$r_d2" == OK* ]] && d_ok=1
@@ -460,7 +491,8 @@ cmd_test_all() {
         
         cp "$f" "$CURRENT_STRATEGY"
         systemctl restart "$SERVICE_NAME" >/dev/null 2>&1
-        sleep 0.8
+        # Ожидание готовности nfqws и загрузки ipset списков в память
+        sleep 2
         
         probe_res=$(run_quick_probe)
         d_ok=$(echo "$probe_res" | cut -d: -f1)
@@ -605,6 +637,79 @@ cmd_test() {
     esac
 }
 
+cmd_diag() {
+    echo -e "${BOLD}======================================================${NC}"
+    echo -e "${BOLD}       Комплексная диагностика системы и zapret       ${NC}"
+    echo -e "${BOLD}======================================================${NC}"
+    echo
+    
+    echo -e "${CYAN}[1] Служба systemd и процесс nfqws:${NC}"
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        echo -e "  Служба $SERVICE_NAME : ${GREEN}ACTIVE (работает)${NC}"
+    else
+        echo -e "  Служба $SERVICE_NAME : ${RED}НЕ АКТИВНА / ОШИБКА${NC}"
+    fi
+    pid=$(pgrep -f "$BIN/nfqws" | head -n 1)
+    if [ -n "$pid" ]; then
+        echo -e "  Процесс nfqws        : ${GREEN}Работает (PID $pid)${NC}"
+    else
+        echo -e "  Процесс nfqws        : ${RED}НЕ ЗАПУЩЕН!${NC}"
+    fi
+    echo
+    
+    echo -e "${CYAN}[2] Параметры ядра Linux (sysctl):${NC}"
+    ts=$(sysctl -n net.ipv4.tcp_timestamps 2>/dev/null)
+    if [ "$ts" = "1" ]; then
+        echo -e "  net.ipv4.tcp_timestamps       : ${GREEN}1 (включено, необходимо для fooling=ts)${NC}"
+    else
+        echo -e "  net.ipv4.tcp_timestamps       : ${RED}$ts (ОШИБКА! Должно быть 1)${NC}"
+    fi
+    ip6=$(sysctl -n net.ipv6.conf.all.disable_ipv6 2>/dev/null)
+    if [ "$ip6" = "1" ]; then
+        echo -e "  net.ipv6.conf.all.disable_ipv6: ${GREEN}1 (IPv6 отключен, нет утечек)${NC}"
+    else
+        echo -e "  net.ipv6.conf.all.disable_ipv6: ${YELLOW}0 (IPv6 включен, возможны утечки мимо desync)${NC}"
+    fi
+    echo
+    
+    echo -e "${CYAN}[3] Правила фаервола iptables (счетчики пакетов):${NC}"
+    ipt_rules=$(iptables -L OUTPUT -v -n 2>/dev/null | grep -E "NFQUEUE.*200")
+    if [ -n "$ipt_rules" ]; then
+        echo "$ipt_rules" | while read -r line; do
+            echo "  $line"
+        done
+    else
+        echo -e "  ${RED}Правила перехвата в iptables не найдены!${NC}"
+    fi
+    echo
+    
+    echo -e "${CYAN}[4] Проверка DNS для discord.com:${NC}"
+    dns_ip=$(getent ahostsv4 discord.com 2>/dev/null | awk '{print $1}' | head -n 1)
+    if [ -n "$dns_ip" ]; then
+        echo -e "  IPv4: ${GREEN}$dns_ip${NC}"
+    else
+        echo -e "  ${RED}Не удалось получить IPv4 для discord.com через DNS!${NC}"
+    fi
+    echo
+    
+    echo -e "${CYAN}[5] Тест TLS handshake (curl -4 -Iv https://discord.com):${NC}"
+    curl_res=$(curl -4 -Iv -m 5 https://discord.com 2>&1)
+    http_line=$(echo "$curl_res" | grep -E "^< HTTP/" | tail -n 1)
+    ssl_err=$(echo "$curl_res" | grep -Ei "(alert|handshake|error|reset)" | head -n 2)
+    if [ -n "$http_line" ]; then
+        echo -e "  Статус: ${GREEN}УСПЕШНО ($http_line)${NC}"
+    else
+        echo -e "  Статус: ${RED}ОШИБКА ХЭНДШЕЙКА / СОЕДИНЕНИЯ${NC}"
+        [ -n "$ssl_err" ] && echo -e "  Детали: ${YELLOW}$ssl_err${NC}"
+    fi
+    echo
+    
+    echo -e "${CYAN}[6] Последние строки журнала службы:${NC}"
+    journalctl -u "$SERVICE_NAME" -n 8 --no-pager 2>/dev/null | sed 's/^/  /'
+    echo
+    echo -e "${BOLD}======================================================${NC}"
+}
+
 cmd_help() {
     echo -e "${BOLD}Утилита управления zapret-discord-youtube-linux${NC}"
     echo
@@ -615,6 +720,7 @@ cmd_help() {
     echo "  list                 Показать список всех 22 стратегий Flowseal"
     echo "  switch [имя|номер]   Сменить стратегию (интерактивное меню или прямой выбор)"
     echo "  test [all|quick|имя] Тестирование доступности сервисов (текущей или всех)"
+    echo "  diag                 Полная диагностика службы, фаервола, DNS и сети"
     echo
     echo "Команды службы:"
     echo "  start                Запустить службу"
@@ -629,6 +735,7 @@ cmd_help() {
     echo "  help                 Показать это сообщение"
     echo
     echo "Примеры:"
+    echo "  zapret-cli diag                 # Полная диагностика всей системы"
     echo "  zapret-cli test                 # Проверить доступность Discord и YouTube"
     echo "  sudo zapret-cli test all        # Авто-тест ВСЕХ стратегий с таблицей результатов"
     echo "  sudo zapret-cli test quick      # Быстрый тест топ-6 популярных стратегий"
@@ -644,6 +751,7 @@ case "$1" in
     list) cmd_list ;;
     switch) cmd_switch "$2" ;;
     test) cmd_test "$2" ;;
+    diag) cmd_diag ;;
     ipv6) cmd_ipv6 "$2" ;;
     game-filter) cmd_game_filter ;;
     update-lists) cmd_update_lists ;;
