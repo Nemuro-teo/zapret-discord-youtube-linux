@@ -1,0 +1,5 @@
+# Исключения
+.game_filter
+*.log
+*.tmp
+current_strategy.conf

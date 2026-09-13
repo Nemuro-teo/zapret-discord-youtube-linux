@@ -1,0 +1,15 @@
+[Unit]
+Description=Zapret Discord & YouTube Bypass Service (Flowseal Linux Port)
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/zapret-linux/scripts/zapret-run.sh
+ExecStop=/opt/zapret-linux/scripts/zapret-stop.sh
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
