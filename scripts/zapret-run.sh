@@ -10,7 +10,30 @@ if [ ! -x "$BIN/nfqws" ]; then
     exit 1
 fi
 
-# Загрузка активной стратегии
+# 1. Настройка Game Filter (игровой фильтр) ДО загрузки стратегии
+GAME_FILTER_FILE="$BASE_DIR/.game_filter"
+GAME_FILTER_TCP="12"
+GAME_FILTER_UDP="12"
+
+if [ -f "$GAME_FILTER_FILE" ]; then
+    MODE=$(cat "$GAME_FILTER_FILE" 2>/dev/null | tr -d ' \t\r\n')
+    case "$MODE" in
+        tcp)
+            GAME_FILTER_TCP="1024-65535"
+            GAME_FILTER_UDP="12"
+            ;;
+        udp)
+            GAME_FILTER_TCP="12"
+            GAME_FILTER_UDP="1024-65535"
+            ;;
+        all|*)
+            GAME_FILTER_TCP="1024-65535"
+            GAME_FILTER_UDP="1024-65535"
+            ;;
+    esac
+fi
+
+# 2. Загрузка активной стратегии (подставляет BIN, LISTS, GAME_FILTER_TCP/UDP)
 STRATEGY_FILE="$BASE_DIR/current_strategy.conf"
 if [ ! -f "$STRATEGY_FILE" ]; then
     if [ -f "$BASE_DIR/strategies/general_alt13.conf" ]; then
@@ -23,37 +46,16 @@ fi
 
 source "$STRATEGY_FILE"
 
-# Настройка Game Filter (игровой фильтр)
-GAME_FILTER_FILE="$BASE_DIR/.game_filter"
-GAME_FILTER_TCP="12"
-GAME_FILTER_UDP="12"
-
-if [ -f "$GAME_FILTER_FILE" ]; then
-    MODE=$(cat "$GAME_FILTER_FILE" 2>/dev/null | tr -d ' \t\r\n')
-    case "$MODE" in
-        tcp)
-            GAME_FILTER_TCP="1024:65535"
-            GAME_FILTER_UDP="12"
-            ;;
-        udp)
-            GAME_FILTER_TCP="12"
-            GAME_FILTER_UDP="1024:65535"
-            ;;
-        all|*)
-            GAME_FILTER_TCP="1024:65535"
-            GAME_FILTER_UDP="1024:65535"
-            ;;
-    esac
-fi
-
-# Порты для iptables
+# 3. Порты для iptables (диапазоны в Linux-фаерволе задаются через двоеточие)
 FINAL_TCP_PORTS="$TCP_PORTS"
 FINAL_UDP_PORTS="$UDP_PORTS"
 if [ "$GAME_FILTER_TCP" != "12" ]; then
-    FINAL_TCP_PORTS="$FINAL_TCP_PORTS,$GAME_FILTER_TCP"
+    IPTABLES_GAME_TCP="${GAME_FILTER_TCP//-/:}"
+    FINAL_TCP_PORTS="$FINAL_TCP_PORTS,$IPTABLES_GAME_TCP"
 fi
 if [ "$GAME_FILTER_UDP" != "12" ]; then
-    FINAL_UDP_PORTS="$FINAL_UDP_PORTS,$GAME_FILTER_UDP"
+    IPTABLES_GAME_UDP="${GAME_FILTER_UDP//-/:}"
+    FINAL_UDP_PORTS="$FINAL_UDP_PORTS,$IPTABLES_GAME_UDP"
 fi
 
 # Очистка старых правил
