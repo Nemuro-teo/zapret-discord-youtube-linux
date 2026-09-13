@@ -50,6 +50,12 @@ cmd_status() {
     echo -e "${BOLD}=== zapret-discord-youtube-linux ===${NC}"
     echo -e "Активная стратегия : ${CYAN}$(get_current_strategy_name)${NC}"
     echo -e "Игровой фильтр     : ${YELLOW}$(get_game_filter_status)${NC}"
+    val=$(sysctl -n net.ipv6.conf.all.disable_ipv6 2>/dev/null || echo "0")
+    if [ "$val" = "1" ]; then
+        echo -e "Протокол IPv6      : ${YELLOW}Отключен в ОС (принудительный IPv4)${NC}"
+    else
+        echo -e "Протокол IPv6      : ${GREEN}Включен (dual-stack)${NC}"
+    fi
     echo
     systemctl status "$SERVICE_NAME" --no-pager
 }
@@ -250,27 +256,384 @@ cmd_log() {
     journalctl -u "$SERVICE_NAME" -f
 }
 
+cmd_ipv6() {
+    subcmd="$1"
+    case "$subcmd" in
+        off|disable)
+            check_root
+            echo "Отключение IPv6 в системе..."
+            sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1
+            sysctl -w net.ipv6.conf.default.disable_ipv6=1 >/dev/null 2>&1
+            sysctl -w net.ipv6.conf.lo.disable_ipv6=1 >/dev/null 2>&1
+            cat << 'EOF' > /etc/sysctl.d/99-zapret-disable-ipv6.conf
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv6.conf.lo.disable_ipv6 = 1
+EOF
+            echo -e "${GREEN}[✓] IPv6 успешно отключен (правило сохранено в /etc/sysctl.d/99-zapret-disable-ipv6.conf).${NC}"
+            echo -e "${CYAN}Теперь все сетевые подключения (Discord, YouTube, браузеры) принудительно идут через чистый IPv4.${NC}"
+            echo "Перезапуск службы $SERVICE_NAME..."
+            systemctl restart "$SERVICE_NAME"
+            ;;
+        on|enable)
+            check_root
+            echo "Включение IPv6 в системе..."
+            sysctl -w net.ipv6.conf.all.disable_ipv6=0 >/dev/null 2>&1
+            sysctl -w net.ipv6.conf.default.disable_ipv6=0 >/dev/null 2>&1
+            sysctl -w net.ipv6.conf.lo.disable_ipv6=0 >/dev/null 2>&1
+            rm -f /etc/sysctl.d/99-zapret-disable-ipv6.conf
+            echo -e "${GREEN}[✓] IPv6 включен.${NC}"
+            echo "Перезапуск службы $SERVICE_NAME..."
+            systemctl restart "$SERVICE_NAME"
+            ;;
+        status|*)
+            val=$(sysctl -n net.ipv6.conf.all.disable_ipv6 2>/dev/null || echo "0")
+            echo -e "${BOLD}=== Статус сетевого протокола IPv6 ===${NC}"
+            if [ "$val" = "1" ]; then
+                echo -e "Состояние          : ${YELLOW}ОТКЛЮЧЕН${NC} (весь сетевой трафик идет по IPv4)"
+            else
+                echo -e "Состояние          : ${GREEN}ВКЛЮЧЕН${NC} (dual-stack IPv4/IPv6)"
+                has_g6=$(ip -6 addr show scope global 2>/dev/null | grep -m 1 "inet6")
+                if [ -n "$has_g6" ]; then
+                    echo -e "Глобальный адрес   : ${CYAN}Присутствует на сетевом интерфейсе${NC}"
+                else
+                    echo -e "Глобальный адрес   : ${YELLOW}Не обнаружен (IPv6 не настроен провайдером)${NC}"
+                fi
+            fi
+            echo
+            echo "Управление:"
+            echo "  sudo zapret-cli ipv6 off   # Принудительно отключить IPv6 (решает блокировки Discord)"
+            echo "  sudo zapret-cli ipv6 on    # Включить IPv6 обратно"
+            ;;
+    esac
+}
+
+test_endpoint() {
+    local url="$1"
+    local opt="$2"
+    local res
+    res=$(curl $opt -s -k -m 3.5 -o /dev/null -w "%{http_code}:%{time_total}" "$url" 2>/dev/null)
+    local code="${res%%:*}"
+    local time="${res##*:}"
+    if [ -n "$code" ] && [ "$code" != "000" ]; then
+        echo "OK:$code:${time}s"
+    else
+        echo "FAIL:000:0.00s"
+    fi
+}
+
+run_quick_probe() {
+    local t_dir
+    t_dir=$(mktemp -d)
+    test_endpoint "https://discord.com" > "$t_dir/d1" &
+    test_endpoint "https://gateway.discord.gg" > "$t_dir/d2" &
+    test_endpoint "https://www.youtube.com" > "$t_dir/y1" &
+    test_endpoint "https://redirector.googlevideo.com" > "$t_dir/y2" &
+    wait
+    
+    local r_d1=$(cat "$t_dir/d1" 2>/dev/null)
+    local r_d2=$(cat "$t_dir/d2" 2>/dev/null)
+    local r_y1=$(cat "$t_dir/y1" 2>/dev/null)
+    local r_y2=$(cat "$t_dir/y2" 2>/dev/null)
+    rm -rf "$t_dir"
+
+    local d_ok=0
+    local y_ok=0
+    [[ "$r_d1" == OK* ]] && [[ "$r_d2" == OK* ]] && d_ok=1
+    [[ "$r_y1" == OK* ]] && [[ "$r_y2" == OK* ]] && y_ok=1
+
+    echo "$d_ok:$y_ok:$r_d1:$r_y1"
+}
+
+cmd_test_current() {
+    if ! command -v curl >/dev/null 2>&1; then
+        echo -e "${RED}[!] curl не найден. Установите curl для проведения тестов.${NC}" >&2
+        return 1
+    fi
+
+    cur_name=$(get_current_strategy_name)
+    echo -e "${BOLD}Тестирование активной стратегии: ${CYAN}$cur_name${NC}"
+    echo "Проверка доступности ключевых сервисов..."
+    echo
+    
+    targets=(
+        "https://discord.com"               "Discord Web"
+        "https://gateway.discord.gg"        "Discord Gateway (Голос)"
+        "https://cdn.discordapp.com"        "Discord CDN (Медиа/Файлы)"
+        "https://www.youtube.com"           "YouTube Web"
+        "https://redirector.googlevideo.com" "YouTube Video Stream"
+        "https://www.google.com"            "Google (Контрольный)"
+    )
+
+    local ipv6_leak_detected=0
+    local all_ok=1
+
+    for ((i=0; i<${#targets[@]}; i+=2)); do
+        url="${targets[$i]}"
+        label="${targets[$((i+1))]}"
+        
+        printf "  %-32s : " "$label"
+        res=$(test_endpoint "$url")
+        if [[ "$res" == OK* ]]; then
+            code=$(echo "$res" | cut -d: -f2)
+            time=$(echo "$res" | cut -d: -f3)
+            echo -e "${GREEN}✓ OK${NC} (HTTP $code, $time)"
+        else
+            all_ok=0
+            echo -e "${RED}✗ FAIL${NC}"
+            # Проверяем IPv4 fallback
+            res4=$(test_endpoint "$url" "-4")
+            if [[ "$res4" == OK* ]]; then
+                ipv6_leak_detected=1
+            fi
+        fi
+    done
+
+    echo
+    if [ "$all_ok" -eq 1 ]; then
+        echo -e "${GREEN}${BOLD}[✓] Все сервисы работают отлично!${NC}"
+    else
+        echo -e "${YELLOW}${BOLD}[!] Некоторые сервисы недоступны.${NC}"
+        if [ "$ipv6_leak_detected" -eq 1 ]; then
+            echo -e "${RED}${BOLD}[!] ВНИМАНИЕ: Запросы по IPv4 работают, но по IPv6 блокируются!${NC}"
+            echo -e "${YELLOW}Решение: отключите утечку IPv6 в системе командой:${NC} ${BOLD}sudo zapret-cli ipv6 off${NC}"
+        else
+            echo -e "Рекомендуется протестировать другие стратегии командой: ${BOLD}sudo zapret-cli test all${NC}"
+        fi
+    fi
+}
+
+cmd_test_all() {
+    check_root
+    if ! command -v curl >/dev/null 2>&1; then
+        echo -e "${RED}[!] curl не найден. Установите curl для проведения тестов.${NC}" >&2
+        return 1
+    fi
+
+    local subset="$1"
+    local files=("$STRATEGY_DIR"/*.conf)
+    if [ "${#files[@]}" -eq 0 ]; then
+        echo -e "${RED}[!] Стратегии не найдены в $STRATEGY_DIR${NC}" >&2
+        return 1
+    fi
+    
+    local backup_strat
+    backup_strat=$(mktemp)
+    cp "$CURRENT_STRATEGY" "$backup_strat"
+    local orig_name
+    orig_name=$(get_current_strategy_name)
+    
+    cleanup_on_interrupt() {
+        echo
+        echo -e "${YELLOW}Тестирование прервано пользователем. Восстановление $orig_name...${NC}"
+        cp "$backup_strat" "$CURRENT_STRATEGY"
+        rm -f "$backup_strat"
+        systemctl restart "$SERVICE_NAME" >/dev/null 2>&1
+        exit 1
+    }
+    trap cleanup_on_interrupt INT TERM
+    
+    echo -e "${BOLD}========================================================================${NC}"
+    echo -e "${BOLD}       Автоматическое тестирование стратегий обхода Flowseal            ${NC}"
+    echo -e "${BOLD}========================================================================${NC}"
+    echo -e "Активная стратегия до теста : ${CYAN}$orig_name${NC}"
+    echo "Тестирование (Discord Web/Gateway + YouTube Web/Video)..."
+    echo
+    printf "  %-3s %-30s | %-15s | %-15s | %-12s\n" "№" "Стратегия" "Discord" "YouTube" "Статус"
+    echo "  ----------------------------------------------------------------------------"
+
+    local working_files=()
+    local working_names=()
+    local idx=1
+    
+    for f in "${files[@]}"; do
+        [ -f "$f" ] || continue
+        fname=$(basename "$f" .conf)
+        sname=$(grep '^STRATEGY_NAME=' "$f" 2>/dev/null | cut -d'"' -f2)
+        
+        if [ "$subset" = "quick" ]; then
+            case "$fname" in
+                general_alt13|general_alt12|general_alt11|general_alt|general_fake_tls_auto|general_simple_fake) ;;
+                *) continue ;;
+            esac
+        fi
+        
+        cp "$f" "$CURRENT_STRATEGY"
+        systemctl restart "$SERVICE_NAME" >/dev/null 2>&1
+        sleep 0.8
+        
+        probe_res=$(run_quick_probe)
+        d_ok=$(echo "$probe_res" | cut -d: -f1)
+        y_ok=$(echo "$probe_res" | cut -d: -f2)
+        r_d1=$(echo "$probe_res" | cut -d: -f3-5)
+        r_y1=$(echo "$probe_res" | cut -d: -f6-8)
+        
+        d_time=$(echo "$r_d1" | cut -d: -f3)
+        y_time=$(echo "$r_y1" | cut -d: -f3)
+
+        if [ "$d_ok" -eq 1 ]; then
+            d_str="${GREEN}✓ OK (${d_time})${NC}"
+        else
+            d_str="${RED}✗ FAIL      ${NC}"
+        fi
+        
+        if [ "$y_ok" -eq 1 ]; then
+            y_str="${GREEN}✓ OK (${y_time})${NC}"
+        else
+            y_str="${RED}✗ FAIL      ${NC}"
+        fi
+        
+        if [ "$d_ok" -eq 1 ] && [ "$y_ok" -eq 1 ]; then
+            status_str="${GREEN}${BOLD}РАБОТАЕТ${NC}  "
+            working_files+=("$f")
+            working_names+=("$sname")
+        elif [ "$d_ok" -eq 1 ] || [ "$y_ok" -eq 1 ]; then
+            status_str="${YELLOW}ЧАСТИЧНО${NC}  "
+        else
+            status_str="${RED}НЕ РАБОТАЕТ${NC}"
+        fi
+        
+        printf "  %02d) %-30s | %b | %b | %b\n" "$idx" "$sname" "$d_str" "$y_str" "$status_str"
+        idx=$((idx + 1))
+    done
+    
+    echo "  ----------------------------------------------------------------------------"
+    echo
+    echo -e "Полностью рабочих стратегий найдено: ${GREEN}${BOLD}${#working_files[@]}${NC}"
+    
+    if [ ${#working_files[@]} -gt 0 ]; then
+        echo -e "${GREEN}Рабочие стратегии для вашей сети и провайдера:${NC}"
+        for ((w=0; w<${#working_names[@]}; w++)); do
+            echo -e "  $((w+1))) ${CYAN}${working_names[$w]}${NC}"
+        done
+        echo
+        
+        if [ -t 0 ]; then
+            read -rp "Применить одну из работающих стратегий? Введите номер 1-${#working_files[@]} (или 0 для возврата '$orig_name'): " pick
+            if [[ "$pick" =~ ^[0-9]+$ ]] && [ "$pick" -ge 1 ] && [ "$pick" -le "${#working_files[@]}" ]; then
+                chosen_f="${working_files[$((pick - 1))]}"
+                chosen_n="${working_names[$((pick - 1))]}"
+                cp "$chosen_f" "$CURRENT_STRATEGY"
+                systemctl restart "$SERVICE_NAME" >/dev/null 2>&1
+                rm -f "$backup_strat"
+                trap - INT TERM
+                echo -e "${GREEN}[✓] Успешно сохранена и активна стратегия: ${BOLD}$chosen_n${NC}"
+                return 0
+            fi
+        fi
+    fi
+    
+    echo "Восстановление исходной стратегии: $orig_name..."
+    cp "$backup_strat" "$CURRENT_STRATEGY"
+    rm -f "$backup_strat"
+    systemctl restart "$SERVICE_NAME" >/dev/null 2>&1
+    trap - INT TERM
+    echo -e "${GREEN}[✓] Исходная стратегия восстановлена.${NC}"
+}
+
+cmd_test_single() {
+    check_root
+    arg="$1"
+    match=""
+    if [ -f "$STRATEGY_DIR/$arg.conf" ]; then
+        match="$STRATEGY_DIR/$arg.conf"
+    elif [ -f "$STRATEGY_DIR/$arg" ]; then
+        match="$STRATEGY_DIR/$arg"
+    else
+        match=$(ls "$STRATEGY_DIR"/*"$arg"*.conf 2>/dev/null | head -n 1)
+    fi
+    
+    if [ -z "$match" ] || [ ! -f "$match" ]; then
+        echo -e "${RED}[!] Стратегия '$arg' не найдена.${NC}" >&2
+        return 1
+    fi
+    
+    backup_strat=$(mktemp)
+    cp "$CURRENT_STRATEGY" "$backup_strat"
+    orig_name=$(get_current_strategy_name)
+    
+    cleanup_single() {
+        echo
+        echo -e "${YELLOW}Тест прерван. Восстановление $orig_name...${NC}"
+        cp "$backup_strat" "$CURRENT_STRATEGY"
+        rm -f "$backup_strat"
+        systemctl restart "$SERVICE_NAME" >/dev/null 2>&1
+        exit 1
+    }
+    trap cleanup_single INT TERM
+    
+    cp "$match" "$CURRENT_STRATEGY"
+    systemctl restart "$SERVICE_NAME" >/dev/null 2>&1
+    sleep 1
+    cmd_test_current
+    
+    if [ -t 0 ]; then
+        echo
+        read -rp "Оставить эту стратегию активной? [y/N]: " keep
+        case "$keep" in
+            y|Y|д|Д)
+                rm -f "$backup_strat"
+                trap - INT TERM
+                echo -e "${GREEN}[✓] Стратегия сохранена.${NC}"
+                return 0
+                ;;
+        esac
+    fi
+    
+    echo "Восстановление исходной стратегии: $orig_name..."
+    cp "$backup_strat" "$CURRENT_STRATEGY"
+    rm -f "$backup_strat"
+    systemctl restart "$SERVICE_NAME" >/dev/null 2>&1
+    trap - INT TERM
+}
+
+cmd_test() {
+    sub="$1"
+    case "$sub" in
+        all)
+            cmd_test_all "all"
+            ;;
+        quick)
+            cmd_test_all "quick"
+            ;;
+        current|"")
+            cmd_test_current
+            ;;
+        *)
+            cmd_test_single "$sub"
+            ;;
+    esac
+}
+
 cmd_help() {
     echo -e "${BOLD}Утилита управления zapret-discord-youtube-linux${NC}"
     echo
     echo "Использование: zapret-cli <команда> [параметры]"
     echo
-    echo "Команды:"
-    echo "  status               Показать текущий статус службы и активную стратегию"
+    echo "Команды управления стратегиями:"
+    echo "  status               Показать текущий статус службы, стратегию и IPv6"
     echo "  list                 Показать список всех 22 стратегий Flowseal"
-    echo "  switch [имя|номер]   Сменить стратегию (меню или прямой выбор)"
+    echo "  switch [имя|номер]   Сменить стратегию (интерактивное меню или прямой выбор)"
+    echo "  test [all|quick|имя] Тестирование доступности сервисов (текущей или всех)"
+    echo
+    echo "Команды службы:"
     echo "  start                Запустить службу"
     echo "  stop                 Остановить службу и сбросить фаервол"
     echo "  restart              Перезапустить службу"
+    echo "  log                  Смотреть журнал работы службы в реальном времени"
+    echo
+    echo "Сетевые настройки:"
+    echo "  ipv6 [status|off|on] Проверить или отключить IPv6 (решает ERR_SSL_VERSION_...)"
     echo "  game-filter          Настройка игрового фильтра (порты игр 1024-65535)"
     echo "  update-lists         Скачать свежие списки IP и доменов от Flowseal"
-    echo "  log                  Смотреть журнал работы службы в реальном времени"
     echo "  help                 Показать это сообщение"
     echo
     echo "Примеры:"
-    echo "  sudo zapret-cli switch           # Открыть меню выбора"
-    echo "  sudo zapret-cli switch alt13     # Быстро включить ALT13"
-    echo "  sudo zapret-cli switch alt12     # Быстро включить ALT12"
+    echo "  zapret-cli test                 # Проверить доступность Discord и YouTube"
+    echo "  sudo zapret-cli test all        # Авто-тест ВСЕХ стратегий с таблицей результатов"
+    echo "  sudo zapret-cli test quick      # Быстрый тест топ-6 популярных стратегий"
+    echo "  sudo zapret-cli ipv6 off        # Отключить IPv6 для защиты от блокировок"
+    echo "  sudo zapret-cli switch alt13     # Быстро включить стратегию ALT13"
 }
 
 case "$1" in
@@ -280,6 +643,8 @@ case "$1" in
     restart) cmd_restart ;;
     list) cmd_list ;;
     switch) cmd_switch "$2" ;;
+    test) cmd_test "$2" ;;
+    ipv6) cmd_ipv6 "$2" ;;
     game-filter) cmd_game_filter ;;
     update-lists) cmd_update_lists ;;
     log) cmd_log ;;
@@ -290,3 +655,4 @@ case "$1" in
         exit 1
         ;;
 esac
+

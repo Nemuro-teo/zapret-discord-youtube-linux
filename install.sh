@@ -129,8 +129,10 @@ if systemctl is-active --quiet zapret-linux.service; then
     echo -e "Активная стратегия: ${CYAN}$(grep '^STRATEGY_NAME=' "$TARGET_DIR/current_strategy.conf" | cut -d'"' -f2)${NC}"
     echo
     echo -e "Теперь вы можете использовать команду ${BOLD}${GREEN}zapret-cli${NC}:"
-    echo -e "  ${BOLD}sudo zapret-cli switch${NC}       - Сменить стратегию обхода (меню)"
-    echo -e "  ${BOLD}sudo zapret-cli switch alt12${NC} - Быстро включить стратегию ALT12"
+    echo -e "  ${BOLD}zapret-cli test${NC}              - Проверить доступность Discord и YouTube прямо сейчас"
+    echo -e "  ${BOLD}sudo zapret-cli test all${NC}     - Протестировать все 22 стратегии и выбрать работающую"
+    echo -e "  ${BOLD}sudo zapret-cli switch${NC}       - Сменить стратегию обхода (интерактивное меню)"
+    echo -e "  ${BOLD}sudo zapret-cli ipv6 off${NC}     - Отключить IPv6 (при ошибке cipher mismatch)"
     echo -e "  ${BOLD}zapret-cli status${NC}            - Проверить статус службы"
     echo -e "  ${BOLD}sudo zapret-cli update-lists${NC} - Обновить списки доменов и IP от Flowseal"
     echo -e "  ${BOLD}zapret-cli log${NC}               - Смотреть лог в реальном времени"
