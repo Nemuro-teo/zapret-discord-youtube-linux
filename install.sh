@@ -39,8 +39,8 @@ elif command -v apt-get &>/dev/null; then
     apt-get update -qq || true
     apt-get install -y --no-install-recommends iptables ipset libnetfilter-queue1 curl wget tar
 elif command -v pacman &>/dev/null; then
-    echo "Используется pacman (Arch Linux)..."
-    pacman -Sy --noconfirm iptables ipset libnetfilter_queue curl wget tar
+    echo "Используется pacman (Arch Linux / CachyOS)..."
+    pacman -Sy --needed --noconfirm iptables ipset libnetfilter_queue curl wget tar
 elif command -v zypper &>/dev/null; then
     echo "Используется zypper..."
     zypper install -y iptables ipset libnetfilter_queue1 curl wget tar
@@ -77,12 +77,16 @@ fi
 # 3. Проверка или скачивание бинарника nfqws
 echo -e "${BOLD}[3/6] Проверка бинарника nfqws...${NC}"
 if [ ! -f "$TARGET_DIR/bin/nfqws" ]; then
-    echo "Скачивание скомпилированного nfqws (версия v72.13 x86_64)..."
-    TMP_DIR=$(mktemp -d)
-    wget -q -O "$TMP_DIR/zapret.tar.gz" "https://github.com/bol-van/zapret/releases/download/v72.13/zapret-v72.13.tar.gz"
-    tar -xzf "$TMP_DIR/zapret.tar.gz" -C "$TMP_DIR"
-    cp "$TMP_DIR"/zapret-*/binaries/x86_64/nfqws "$TARGET_DIR/bin/nfqws"
-    rm -rf "$TMP_DIR"
+    if [ -f "$SCRIPT_DIR/bin/nfqws" ]; then
+        cp "$SCRIPT_DIR/bin/nfqws" "$TARGET_DIR/bin/nfqws"
+    else
+        echo "Скачивание скомпилированного nfqws (версия v72.13 x86_64)..."
+        TMP_DIR=$(mktemp -d)
+        wget -q -O "$TMP_DIR/zapret.tar.gz" "https://github.com/bol-van/zapret/releases/download/v72.13/zapret-v72.13.tar.gz"
+        tar -xzf "$TMP_DIR/zapret.tar.gz" -C "$TMP_DIR"
+        find "$TMP_DIR" -type f -name "nfqws" -path "*/linux-x86_64/*" -exec cp {} "$TARGET_DIR/bin/nfqws" \;
+        rm -rf "$TMP_DIR"
+    fi
 fi
 chmod +x "$TARGET_DIR/bin/nfqws"
 
