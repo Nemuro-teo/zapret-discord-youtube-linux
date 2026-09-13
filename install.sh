@@ -75,8 +75,7 @@ if [ ! -f "$TARGET_DIR/current_strategy.conf" ]; then
 fi
 sed -i 's/\^!/!/g' "$TARGET_DIR/current_strategy.conf" 2>/dev/null || true
 
-# Включаем блокировку QUIC по умолчанию для защиты от ERR_SSL_PROTOCOL_ERROR в Chrome/Firefox
-touch "$TARGET_DIR/.block_quic"
+rm -f "$TARGET_DIR/.block_quic"
 
 
 # 3. Проверка или скачивание бинарника nfqws
@@ -125,6 +124,7 @@ chmod +x "$TARGET_DIR/zapret-cli" 2>/dev/null || true
 cp "$SCRIPT_DIR/systemd/zapret-linux.service" /etc/systemd/system/zapret-linux.service
 
 systemctl daemon-reload
+systemctl reset-failed zapret-linux.service 2>/dev/null || true
 systemctl enable zapret-linux.service
 systemctl restart zapret-linux.service
 

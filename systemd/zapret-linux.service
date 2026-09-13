@@ -2,6 +2,8 @@
 Description=Zapret Discord & YouTube Bypass Service (Flowseal Linux Port)
 After=network.target network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=0
+
 
 [Service]
 Type=simple

@@ -92,11 +92,7 @@ if ! iptables -I OUTPUT -p udp -m multiport --dports $FINAL_UDP_PORTS -m mark ! 
     echo "[ОШИБКА] Сбой команды iptables для UDP!" >&2
 fi
 
-# Блокировка QUIC (UDP 443), принуждающая браузеры мгновенно переходить на TCP TLS (HTTP/2)
-if [ -f "$BASE_DIR/.block_quic" ]; then
-    iptables -I OUTPUT -p udp --dport 443 -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || true
-fi
-
 echo "Запуск nfqws со стратегией: $STRATEGY_NAME"
 eval "exec \"$BIN/nfqws\" --qnum=$QNUM --dpi-desync-fwmark=0x40000000 $NFQWS_OPT"
+
 

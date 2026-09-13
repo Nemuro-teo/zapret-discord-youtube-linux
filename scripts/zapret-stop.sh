@@ -5,7 +5,7 @@ QNUM=200
 # Быстрое удаление стандартных правил Flowseal
 iptables -D OUTPUT -p tcp -m multiport --dports 80,443,2053,2083,2087,2096,8443 -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num $QNUM --queue-bypass 2>/dev/null || true
 iptables -D OUTPUT -p udp -m multiport --dports 443,19294:19344,50000:50100 -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num $QNUM --queue-bypass 2>/dev/null || true
-iptables -D OUTPUT -p udp --dport 443 -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || true
+while iptables -D OUTPUT -p udp --dport 443 -j REJECT --reject-with icmp-port-unreachable 2>/dev/null; do :; done
 
 
 # Полная очистка любых оставшихся правил NFQUEUE для IPv4
