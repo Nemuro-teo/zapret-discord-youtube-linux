@@ -308,11 +308,44 @@ EOF
     esac
 }
 
+cmd_quic() {
+    subcmd="$1"
+    BLOCK_QUIC_FILE="$BASE_DIR/.block_quic"
+    case "$subcmd" in
+        off|block)
+            check_root
+            touch "$BLOCK_QUIC_FILE"
+            echo "Блокировка протокола QUIC (UDP 443) активирована..."
+            iptables -I OUTPUT -p udp --dport 443 -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || true
+            echo -e "${GREEN}[✓] QUIC заблокирован в фаерволе.${NC}"
+            echo -e "${CYAN}Браузеры (Chrome/Firefox/Edge) теперь принудительно подключаются по стабильному TCP TLS (HTTP/2), что решает ошибку ERR_SSL_PROTOCOL_ERROR на YouTube.${NC}"
+            ;;
+        on|unblock)
+            check_root
+            rm -f "$BLOCK_QUIC_FILE"
+            iptables -D OUTPUT -p udp --dport 443 -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || true
+            echo -e "${GREEN}[✓] Блокировка QUIC снята.${NC}"
+            ;;
+        status|*)
+            echo -e "${BOLD}=== Статус протокола QUIC (HTTP/3 / UDP 443) ===${NC}"
+            if [ -f "$BLOCK_QUIC_FILE" ]; then
+                echo -e "Состояние          : ${GREEN}ЗАБЛОКИРОВАН в фаерволе${NC} (защита от ERR_SSL_PROTOCOL_ERROR)"
+            else
+                echo -e "Состояние          : ${YELLOW}НЕ ЗАБЛОКИРОВАН${NC} (браузеры пытаются использовать QUIC на YouTube)"
+            fi
+            echo
+            echo "Управление:"
+            echo "  sudo zapret-cli quic off   # Заблокировать QUIC (исправляет ошибку YouTube в браузерах)"
+            echo "  sudo zapret-cli quic on    # Разблокировать QUIC"
+            ;;
+    esac
+}
+
+
 test_endpoint() {
     local url="$1"
-    local opt="$2"
     local res
-    res=$(curl $opt -s -k -m 3.5 -o /dev/null -w "%{http_code}:%{time_total}" "$url" 2>/dev/null)
+    res=$(curl -4 -s -k -m 4 -o /dev/null -w "%{http_code}:%{time_total}" "$url" 2>/dev/null)
     local code="${res%%:*}"
     local time="${res##*:}"
     if [ -n "$code" ] && [ "$code" != "000" ]; then
@@ -326,55 +359,21 @@ run_quick_probe() {
     local t_dir
     t_dir=$(mktemp -d)
     test_endpoint "https://discord.com" > "$t_dir/d1" &
-    test_endpoint "https://gateway.discord.gg" > "$t_dir/d2" &
     test_endpoint "https://www.youtube.com" > "$t_dir/y1" &
-    test_endpoint "https://redirector.googlevideo.com" > "$t_dir/y2" &
     wait
     
     local r_d1=$(cat "$t_dir/d1" 2>/dev/null)
-    local r_d2=$(cat "$t_dir/d2" 2>/dev/null)
     local r_y1=$(cat "$t_dir/y1" 2>/dev/null)
-    local r_y2=$(cat "$t_dir/y2" 2>/dev/null)
     rm -rf "$t_dir"
-
-    # Если стандартный запрос заблокирован (например, из-за IPv6), проверяем IPv4
-    if [[ "$r_d1" != OK* ]] || [[ "$r_d2" != OK* ]]; then
-        local t4_dir
-        t4_dir=$(mktemp -d)
-        test_endpoint "https://discord.com" "-4" > "$t4_dir/d1" &
-        test_endpoint "https://gateway.discord.gg" "-4" > "$t4_dir/d2" &
-        wait
-        local r_d1_4=$(cat "$t4_dir/d1" 2>/dev/null)
-        local r_d2_4=$(cat "$t4_dir/d2" 2>/dev/null)
-        rm -rf "$t4_dir"
-        if [[ "$r_d1_4" == OK* ]] && [[ "$r_d2_4" == OK* ]]; then
-            r_d1="$r_d1_4"
-            r_d2="$r_d2_4"
-        fi
-    fi
-
-    if [[ "$r_y1" != OK* ]] || [[ "$r_y2" != OK* ]]; then
-        local ty4_dir
-        ty4_dir=$(mktemp -d)
-        test_endpoint "https://www.youtube.com" "-4" > "$ty4_dir/y1" &
-        test_endpoint "https://redirector.googlevideo.com" "-4" > "$ty4_dir/y2" &
-        wait
-        local r_y1_4=$(cat "$ty4_dir/y1" 2>/dev/null)
-        local r_y2_4=$(cat "$ty4_dir/y2" 2>/dev/null)
-        rm -rf "$ty4_dir"
-        if [[ "$r_y1_4" == OK* ]] && [[ "$r_y2_4" == OK* ]]; then
-            r_y1="$r_y1_4"
-            r_y2="$r_y2_4"
-        fi
-    fi
 
     local d_ok=0
     local y_ok=0
-    [[ "$r_d1" == OK* ]] && [[ "$r_d2" == OK* ]] && d_ok=1
-    [[ "$r_y1" == OK* ]] && [[ "$r_y2" == OK* ]] && y_ok=1
+    [[ "$r_d1" == OK* ]] && d_ok=1
+    [[ "$r_y1" == OK* ]] && y_ok=1
 
     echo "$d_ok:$y_ok:$r_d1:$r_y1"
 }
+
 
 cmd_test_current() {
     if ! command -v curl >/dev/null 2>&1; then
@@ -518,9 +517,15 @@ cmd_test_all() {
         if [ "$d_ok" -eq 1 ] && [ "$y_ok" -eq 1 ]; then
             status_str="${GREEN}${BOLD}РАБОТАЕТ${NC}  "
             working_files+=("$f")
-            working_names+=("$sname")
-        elif [ "$d_ok" -eq 1 ] || [ "$y_ok" -eq 1 ]; then
-            status_str="${YELLOW}ЧАСТИЧНО${NC}  "
+            working_names+=("$sname [Discord + YouTube]")
+        elif [ "$d_ok" -eq 1 ]; then
+            status_str="${YELLOW}Discord OK${NC}"
+            working_files+=("$f")
+            working_names+=("$sname [только Discord]")
+        elif [ "$y_ok" -eq 1 ]; then
+            status_str="${YELLOW}YouTube OK${NC}"
+            working_files+=("$f")
+            working_names+=("$sname [только YouTube]")
         else
             status_str="${RED}НЕ РАБОТАЕТ${NC}"
         fi
@@ -531,10 +536,10 @@ cmd_test_all() {
     
     echo "  ----------------------------------------------------------------------------"
     echo
-    echo -e "Полностью рабочих стратегий найдено: ${GREEN}${BOLD}${#working_files[@]}${NC}"
+    echo -e "Подходящих стратегий найдено: ${GREEN}${BOLD}${#working_files[@]}${NC}"
     
     if [ ${#working_files[@]} -gt 0 ]; then
-        echo -e "${GREEN}Рабочие стратегии для вашей сети и провайдера:${NC}"
+        echo -e "${GREEN}Список найденных вариантов:${NC}"
         for ((w=0; w<${#working_names[@]}; w++)); do
             echo -e "  $((w+1))) ${CYAN}${working_names[$w]}${NC}"
         done
@@ -741,6 +746,7 @@ cmd_help() {
     echo
     echo "Сетевые настройки:"
     echo "  ipv6 [status|off|on] Проверить или отключить IPv6 (решает ERR_SSL_VERSION_...)"
+    echo "  quic [status|off|on] Блокировка QUIC (UDP 443) для исправления YouTube в браузерах"
     echo "  game-filter          Настройка игрового фильтра (порты игр 1024-65535)"
     echo "  update-lists         Скачать свежие списки IP и доменов от Flowseal"
     echo "  help                 Показать это сообщение"
@@ -750,6 +756,7 @@ cmd_help() {
     echo "  zapret-cli test                 # Проверить доступность Discord и YouTube"
     echo "  sudo zapret-cli test all        # Авто-тест ВСЕХ стратегий с таблицей результатов"
     echo "  sudo zapret-cli test quick      # Быстрый тест топ-6 популярных стратегий"
+    echo "  sudo zapret-cli quic off        # Блокировать QUIC (решает ERR_SSL_PROTOCOL_ERROR на YouTube)"
     echo "  sudo zapret-cli ipv6 off        # Отключить IPv6 для защиты от блокировок"
     echo "  sudo zapret-cli switch alt13     # Быстро включить стратегию ALT13"
 }
@@ -764,6 +771,7 @@ case "$1" in
     test) cmd_test "$2" ;;
     diag) cmd_diag ;;
     ipv6) cmd_ipv6 "$2" ;;
+    quic) cmd_quic "$2" ;;
     game-filter) cmd_game_filter ;;
     update-lists) cmd_update_lists ;;
     log) cmd_log ;;

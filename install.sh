@@ -75,6 +75,9 @@ if [ ! -f "$TARGET_DIR/current_strategy.conf" ]; then
 fi
 sed -i 's/\^!/!/g' "$TARGET_DIR/current_strategy.conf" 2>/dev/null || true
 
+# Включаем блокировку QUIC по умолчанию для защиты от ERR_SSL_PROTOCOL_ERROR в Chrome/Firefox
+touch "$TARGET_DIR/.block_quic"
+
 
 # 3. Проверка или скачивание бинарника nfqws
 echo -e "${BOLD}[3/6] Проверка бинарника nfqws...${NC}"
