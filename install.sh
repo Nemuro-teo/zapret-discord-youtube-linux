@@ -73,6 +73,8 @@ touch "$TARGET_DIR/lists/list-exclude-user.txt"
 if [ ! -f "$TARGET_DIR/current_strategy.conf" ]; then
     cp "$TARGET_DIR/strategies/general_alt13.conf" "$TARGET_DIR/current_strategy.conf"
 fi
+sed -i 's/\^!/!/g' "$TARGET_DIR/current_strategy.conf" 2>/dev/null || true
+
 
 # 3. Проверка или скачивание бинарника nfqws
 echo -e "${BOLD}[3/6] Проверка бинарника nfqws...${NC}"

@@ -55,6 +55,9 @@ if [ ! -f "$STRATEGY_FILE" ]; then
     fi
 fi
 
+# Авто-исправление старых артефактов Windows CMD (^!) в конфигурации стратегии
+sed -i 's/\^!/!/g' "$STRATEGY_FILE" 2>/dev/null || true
+
 source "$STRATEGY_FILE"
 
 # Если игровой фильтр отключен (12), убираем неиспользуемые профили для 100% совпадения с чистым Flowseal
