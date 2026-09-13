@@ -72,8 +72,12 @@ fi
 "$BASE_DIR/scripts/zapret-stop.sh" 2>/dev/null
 
 echo "Применение правил фаервола iptables (IPv4)..."
-iptables -I OUTPUT -p tcp -m multiport --dports $FINAL_TCP_PORTS -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num $QNUM --queue-bypass
-iptables -I OUTPUT -p udp -m multiport --dports $FINAL_UDP_PORTS -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num $QNUM --queue-bypass
+if ! iptables -I OUTPUT -p tcp -m multiport --dports $FINAL_TCP_PORTS -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num $QNUM --queue-bypass; then
+    echo "[ОШИБКА] Сбой команды iptables для TCP!" >&2
+fi
+if ! iptables -I OUTPUT -p udp -m multiport --dports $FINAL_UDP_PORTS -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num $QNUM --queue-bypass; then
+    echo "[ОШИБКА] Сбой команды iptables для UDP!" >&2
+fi
 
 # Если включен IPv6 и доступен ip6tables, направляем IPv6 трафик в nfqws
 if command -v ip6tables >/dev/null 2>&1 && [ -f /proc/net/if_inet6 ]; then

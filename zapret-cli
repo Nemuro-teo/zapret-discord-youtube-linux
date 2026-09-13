@@ -638,6 +638,7 @@ cmd_test() {
 }
 
 cmd_diag() {
+    check_root
     echo -e "${BOLD}======================================================${NC}"
     echo -e "${BOLD}       Комплексная диагностика системы и zapret       ${NC}"
     echo -e "${BOLD}======================================================${NC}"
@@ -673,13 +674,23 @@ cmd_diag() {
     echo
     
     echo -e "${CYAN}[3] Правила фаервола iptables (счетчики пакетов):${NC}"
-    ipt_rules=$(iptables -L OUTPUT -v -n 2>/dev/null | grep -E "NFQUEUE.*200")
+    ipt_rules=$(iptables -S OUTPUT 2>/dev/null | grep "NFQUEUE")
     if [ -n "$ipt_rules" ]; then
-        echo "$ipt_rules" | while read -r line; do
-            echo "  $line"
+        echo -e "${GREEN}  ✓ Правила перехвата NFQUEUE активны:${NC}"
+        iptables -L OUTPUT -v -n 2>/dev/null | grep -E "NFQUEUE" | while read -r line; do
+            echo "    $line"
         done
     else
-        echo -e "  ${RED}Правила перехвата в iptables не найдены!${NC}"
+        echo -e "${RED}  ✗ Правила перехвата в iptables отсутствуют!${NC}"
+        echo "  Тестовая проверка добавления правила в фаервол..."
+        test_err=$(iptables -I OUTPUT -p tcp --dport 443 -j NFQUEUE --queue-num 200 --queue-bypass 2>&1)
+        res_code=$?
+        if [ $res_code -ne 0 ]; then
+            echo -e "  ${RED}Ошибка ядра при установке NFQUEUE:${NC} $test_err"
+        else
+            echo -e "  ${YELLOW}Тестовое правило успешно ставится вручную. Очистка теста...${NC}"
+            iptables -D OUTPUT -p tcp --dport 443 -j NFQUEUE --queue-num 200 --queue-bypass 2>/dev/null
+        fi
     fi
     echo
     
