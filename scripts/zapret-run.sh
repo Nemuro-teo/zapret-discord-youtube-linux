@@ -62,6 +62,10 @@ if [ "$GAME_FILTER_TCP" = "12" ] && [ "$GAME_FILTER_UDP" = "12" ]; then
     NFQWS_OPT="${NFQWS_OPT%%--new --filter-tcp=12*}"
 fi
 
+# Убираем возможные висячие обратные слэши и пробелы в конце строки
+NFQWS_OPT=$(echo "$NFQWS_OPT" | sed -e 's/[[:space:]\\]*$//')
+
+
 # 3. Порты для iptables (диапазоны в Linux-фаерволе задаются через двоеточие)
 FINAL_TCP_PORTS="$TCP_PORTS"
 FINAL_UDP_PORTS="$UDP_PORTS"

@@ -105,9 +105,9 @@ echo "net.ipv4.tcp_timestamps = 1" | tee /etc/sysctl.d/99-zapret.conf >/dev/null
 ln -sf "$TARGET_DIR/scripts/zapret-run.sh" "$TARGET_DIR/start.sh"
 ln -sf "$TARGET_DIR/scripts/zapret-stop.sh" "$TARGET_DIR/stop.sh"
 
-# SELinux контекст для РЕД ОС / Fedora (unconfined_exec_t позволяет raw sockets и пакетную инъекцию)
+# SELinux контекст для РЕД ОС / Fedora
 if command -v chcon &>/dev/null && command -v getenforce &>/dev/null && [ "$(getenforce)" != "Disabled" ]; then
-    chcon -t unconfined_exec_t "$TARGET_DIR/bin/nfqws" 2>/dev/null || true
+    chcon -t bin_t "$TARGET_DIR/bin/nfqws" 2>/dev/null || true
     chcon -t bin_t "$TARGET_DIR/scripts/"*.sh 2>/dev/null || true
     chcon -t bin_t "$TARGET_DIR/zapret-cli" 2>/dev/null || true
 fi
