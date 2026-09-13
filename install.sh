@@ -101,9 +101,13 @@ chmod 644 "$TARGET_DIR/lists/"*.txt 2>/dev/null || true
 sysctl -w net.ipv4.tcp_timestamps=1 >/dev/null 2>&1 || true
 echo "net.ipv4.tcp_timestamps = 1" | tee /etc/sysctl.d/99-zapret.conf >/dev/null 2>&1 || true
 
-# SELinux контекст для РЕД ОС / Fedora
-if command -v chcon &>/dev/null; then
-    chcon -t bin_t "$TARGET_DIR/bin/nfqws" 2>/dev/null || true
+# Создаем прямые ярлыки start.sh и stop.sh (для удобного ручного запуска в терминале)
+ln -sf "$TARGET_DIR/scripts/zapret-run.sh" "$TARGET_DIR/start.sh"
+ln -sf "$TARGET_DIR/scripts/zapret-stop.sh" "$TARGET_DIR/stop.sh"
+
+# SELinux контекст для РЕД ОС / Fedora (unconfined_exec_t позволяет raw sockets и пакетную инъекцию)
+if command -v chcon &>/dev/null && command -v getenforce &>/dev/null && [ "$(getenforce)" != "Disabled" ]; then
+    chcon -t unconfined_exec_t "$TARGET_DIR/bin/nfqws" 2>/dev/null || true
     chcon -t bin_t "$TARGET_DIR/scripts/"*.sh 2>/dev/null || true
     chcon -t bin_t "$TARGET_DIR/zapret-cli" 2>/dev/null || true
 fi

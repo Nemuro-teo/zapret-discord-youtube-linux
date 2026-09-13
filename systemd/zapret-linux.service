@@ -10,6 +10,9 @@ ExecStop=/opt/zapret-linux/scripts/zapret-stop.sh
 Restart=always
 RestartSec=3
 LimitNOFILE=65535
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+SELinuxContext=system_u:system_r:unconfined_service_t:s0
 
 [Install]
 WantedBy=multi-user.target
