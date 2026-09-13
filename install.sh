@@ -62,6 +62,8 @@ cp -r "$SCRIPT_DIR/lists" "$TARGET_DIR/"
 cp -r "$SCRIPT_DIR/strategies" "$TARGET_DIR/"
 cp -r "$SCRIPT_DIR/scripts" "$TARGET_DIR/"
 cp "$SCRIPT_DIR/zapret-cli" "$TARGET_DIR/"
+cp "$SCRIPT_DIR/uninstall.sh" "$TARGET_DIR/"
+chmod +x "$TARGET_DIR/uninstall.sh" 2>/dev/null || true
 
 # Проверяем наличие пустых списков
 touch "$TARGET_DIR/lists/ipset-exclude.txt"

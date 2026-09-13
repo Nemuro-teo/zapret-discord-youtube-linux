@@ -694,6 +694,26 @@ cmd_diag() {
     echo -e "${BOLD}======================================================${NC}"
 }
 
+cmd_uninstall() {
+    check_root
+    if [ "$1" != "-y" ] && [ "$1" != "--yes" ]; then
+        echo -e "${YELLOW}Вы действительно хотите полностью удалить zapret-discord-youtube-linux? (y/N)${NC}"
+        read -r confirm
+        case "$confirm" in
+            y|Y|yes|Yes|да|Да) ;;
+            *) echo "Удаление отменено."; return 0 ;;
+        esac
+    fi
+    if [ -f "$BASE_DIR/uninstall.sh" ]; then
+        bash "$BASE_DIR/uninstall.sh"
+    elif [ -f "$(dirname "$0")/uninstall.sh" ]; then
+        bash "$(dirname "$0")/uninstall.sh"
+    else
+        echo -e "${RED}[!] Файл uninstall.sh не найден!${NC}"
+        exit 1
+    fi
+}
+
 cmd_help() {
     echo -e "${BOLD}Утилита управления zapret-discord-youtube-linux${NC}"
     echo
@@ -711,6 +731,7 @@ cmd_help() {
     echo "  stop                 Остановить службу и сбросить фаервол"
     echo "  restart              Перезапустить службу"
     echo "  log                  Смотреть журнал работы службы в реальном времени"
+    echo "  uninstall            Полностью удалить zapret-discord-youtube-linux из системы"
     echo
     echo "Сетевые настройки:"
     echo "  ipv6 [status|off|on] Проверить или отключить IPv6 (решает ERR_SSL_VERSION_...)"
@@ -725,6 +746,7 @@ cmd_help() {
     echo "  sudo zapret-cli test quick      # Быстрый тест топ-6 популярных стратегий"
     echo "  sudo zapret-cli ipv6 off        # Отключить IPv6 для защиты от блокировок"
     echo "  sudo zapret-cli switch alt13     # Быстро включить стратегию ALT13"
+    echo "  sudo zapret-cli uninstall       # Полное удаление из системы"
 }
 
 case "$1" in
@@ -740,6 +762,7 @@ case "$1" in
     game-filter) cmd_game_filter ;;
     update-lists) cmd_update_lists ;;
     log) cmd_log ;;
+    uninstall) cmd_uninstall "$2" ;;
     help|--help|-h|"") cmd_help ;;
     *)
         echo -e "${RED}[!] Неизвестная команда: $1${NC}"
