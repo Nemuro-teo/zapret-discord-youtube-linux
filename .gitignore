@@ -1,5 +1,8 @@
 # Исключения
 .game_filter
+.no_hosts
 *.log
 *.tmp
+*.pyc
+__pycache__/
 current_strategy.conf

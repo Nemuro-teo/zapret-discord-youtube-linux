@@ -1,0 +1,14 @@
+[Unit]
+Description=Zapret Telegram MTProto WebSocket Proxy (Flowseal / Nukera Port)
+After=network.target network-online.target zapret-linux.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/zapret-linux/services/tg-ws-proxy/tgproxy.py 1443
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

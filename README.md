@@ -9,6 +9,8 @@
 ## ✨ Особенности
 
 - 🎯 **22 готовые стратегии Flowseal**: `ALT13`, `ALT12`, `ALT11`, `ALT`, `FAKE TLS AUTO`, `SIMPLE FAKE` и др.
+- 📸 **Обход Meta (Instagram, Facebook, WhatsApp) и Telegram Web**: интеллектуальная маршрутизация через чистые Anycast CDN Edge IP (методика из Nukera) в комбинации с десинхронизацией `nfqws`.
+- ✈️ **Встроенный MTProto WebSocket Proxy для Telegram**: локальный прокси (`127.0.0.1:1443`) для Telegram Desktop и мобильных приложений с автогенерацией `tg://` ссылки.
 - ⚡ **Мгновенное переключение стратегий**: интерактивное меню или команда `sudo zapret-cli switch <имя>` на лету меняют стратегию и перезапускают службу.
 - 🛡️ **Полная адаптация под РЕД ОС 8**: учтены правила SELinux, корректная работа `iptables/nftables`, включение `net.ipv4.tcp_timestamps = 1` для `ts`-спуфинга.
 - 🎮 **Game Filter**: поддержка игрового фильтра (порты 1024–65535 для TCP и UDP) через меню или команду `zapret-cli game-filter`.
@@ -85,29 +87,63 @@ sudo zapret-cli ipv6 off
 sudo zapret-cli ipv6 on
 ```
 
-### 5. Список всех стратегий
+### 5. Разблокировка Meta (Instagram, Facebook) и Telegram Web (`hosts`)
+В РФ ресурсы Meta (Instagram, Facebook) и частично Telegram заблокированы **на уровне IP-маршрутизации (BGP blackhole)** — обычный DNS возвращает заблокированные адреса, до которых пакеты даже не доходят.
+В проекте реализован метод из Nukera / MagilaCDN: чистые Anycast CDN Edge IP сопоставляются с доменами в `/etc/hosts`, после чего `nfqws` успешно десинхронизирует TLS SNI.
+
+```bash
+# Проверить статус разблокировки hosts:
+zapret-cli hosts
+
+# Включить разблокировку Meta и Telegram Web:
+sudo zapret-cli hosts on
+
+# Отключить (вернуть стандартный /etc/hosts):
+sudo zapret-cli hosts off
+```
+*Примечание:* при `sudo zapret-cli start` или `restart` хосты подключаются автоматически.
+
+### 6. MTProto WebSocket прокси для Telegram Desktop (`zapret-cli tg`)
+Для обхода блокировок звонков и медиа в Telegram Desktop и мобильных приложениях встроен локальный WebSocket MTProto-прокси:
+
+```bash
+# Включить прокси Telegram (автоматически создаст и запустит службу):
+sudo zapret-cli tg on
+
+# Получить готовую ссылку для подключения в Telegram:
+zapret-cli tg link
+
+# Проверить статус:
+zapret-cli tg status
+
+# Остановить службу прокси:
+sudo zapret-cli tg off
+```
+После включения достаточно нажать на ссылку `tg://proxy?server=127.0.0.1&port=1443&secret=...` или ввести параметры вручную в настройках Telegram (*Настройки -> Продвинутые -> Тип соединения -> Прокси*).
+
+### 7. Список всех стратегий
 ```bash
 zapret-cli list
 ```
 
-### 6. Проверка статуса
+### 8. Проверка статуса
 ```bash
 zapret-cli status
 ```
-Выводит название активной стратегии, состояние IPv6, состояние игрового фильтра и системный статус службы.
+Выводит название активной стратегии, состояние IPv6, состояние Meta/TG hosts, статус Telegram MTProto прокси, состояние игрового фильтра и системный статус службы.
 
-### 7. Обновление списков доменов и IP
+### 9. Обновление списков доменов и IP
 ```bash
 sudo zapret-cli update-lists
 ```
 Скачивает актуальный `ipset-service.txt` (IP-адреса Discord, YouTube, CDN) из репозитория Flowseal и применяет обновления.
 
-### 8. Настройка игрового фильтра
+### 10. Настройка игрового фильтра
 ```bash
 sudo zapret-cli game-filter
 ```
 
-### 9. Просмотр логов в реальном времени
+### 11. Просмотр логов в реальном времени
 ```bash
 zapret-cli log
 ```
@@ -126,16 +162,21 @@ zapret-cli log
 │   ├── tls_clienthello_max_ru.bin
 │   ├── stun.bin, stun2.bin
 │   └── ACTIVE_DISCORD_UDP.bin, ACTIVE_GAME_UDP.bin ...
-├── lists/                     # Списки доменов и IP от Flowseal
+├── lists/                     # Списки доменов и IP от Flowseal + Anycast IP
 │   ├── ipset-all.txt          # База IP адресов (Discord, Cloudflare и др.)
-│   ├── list-general.txt       # Основные домены
+│   ├── list-general.txt       # Основные домены (включая Discord, Meta, Telegram)
 │   ├── list-google.txt        # Домены сервисов Google и YouTube
 │   ├── list-exclude.txt       # Исключения
+│   ├── hosts-meta.txt         # Anycast Edge IP для Instagram и Facebook
+│   ├── hosts-telegram.txt     # Clean Edge IP для Telegram Web
 │   └── *-user.txt             # Пользовательские списки
+├── services/                  # Вспомогательные службы
+│   └── tg-ws-proxy/           # MTProto WebSocket локальный прокси для Telegram
 ├── strategies/                # 22 файла готовых стратегий (.conf)
 ├── scripts/
 │   ├── zapret-run.sh          # Скрипт запуска выбранной стратегии и фаервола
-│   └── zapret-stop.sh         # Скрипт корректной очистки правил iptables
+│   ├── zapret-stop.sh         # Скрипт корректной очистки правил iptables и hosts
+│   └── zapret-hosts.sh        # Утилита управления Anycast CDN в /etc/hosts
 ├── zapret-cli                 # Главная утилита управления
 └── current_strategy.conf      # Текущая выбранная стратегия
 ```
@@ -197,3 +238,4 @@ sudo bash uninstall.sh
 ## 🤝 Благодарности
 - [bol-van](https://github.com/bol-van/zapret) — автор оригинального комплекса `zapret` и движка `nfqws`.
 - [Flowseal](https://github.com/Flowseal/zapret-discord-youtube) — автор стратегий, дампов и списков.
+- [finestcrtn/nukera](https://github.com/finestcrtn/nukera) — концепция Anycast Edge IP маршрутизации для Meta/Telegram и MTProto WebSocket прокси.

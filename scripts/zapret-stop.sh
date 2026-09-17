@@ -25,4 +25,9 @@ fi
 # Остановка standalone процессов nfqws при ручном запуске
 pkill -f "$BASE_DIR/bin/nfqws" 2>/dev/null || true
 
+# Очистка записей /etc/hosts
+if [ -x "$BASE_DIR/scripts/zapret-hosts.sh" ]; then
+    "$BASE_DIR/scripts/zapret-hosts.sh" remove >/dev/null 2>&1 || true
+fi
+
 exit 0

@@ -57,3 +57,33 @@ betterttv.net
 localizeapi.com
 klipy.com
 live-video.net
+
+# Meta (Instagram, Facebook, WhatsApp)
+facebook.com
+fb.com
+fb.me
+fbcdn.net
+fbsbx.com
+messenger.com
+m.me
+instagram.com
+cdninstagram.com
+whatsapp.com
+whatsapp.net
+whatsappbusiness.com
+
+# Telegram
+telegram.org
+telegram.me
+telegram.dog
+telegram.space
+telegra.ph
+telesco.pe
+tg.dev
+t.me
+
+# Twitter / X
+twitter.com
+x.com
+t.co
+twimg.com

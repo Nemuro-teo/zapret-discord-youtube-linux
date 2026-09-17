@@ -30,20 +30,20 @@ echo
 echo -e "${BOLD}[1/6] Проверка и установка системных пакетов...${NC}"
 if command -v dnf &>/dev/null; then
     echo "Используется dnf (РЕД ОС / Fedora / CentOS)..."
-    dnf install -y iptables ipset libnetfilter_queue curl wget tar
+    dnf install -y iptables ipset libnetfilter_queue curl wget tar python3
 elif command -v yum &>/dev/null; then
     echo "Используется yum..."
-    yum install -y iptables ipset libnetfilter_queue curl wget tar
+    yum install -y iptables ipset libnetfilter_queue curl wget tar python3
 elif command -v apt-get &>/dev/null; then
     echo "Используется apt-get (Ubuntu / Debian)..."
     apt-get update -qq || true
-    apt-get install -y --no-install-recommends iptables ipset libnetfilter-queue1 curl wget tar
+    apt-get install -y --no-install-recommends iptables ipset libnetfilter-queue1 curl wget tar python3
 elif command -v pacman &>/dev/null; then
     echo "Используется pacman (Arch Linux / CachyOS)..."
-    pacman -Sy --needed --noconfirm iptables ipset libnetfilter_queue curl wget tar
+    pacman -Sy --needed --noconfirm iptables ipset libnetfilter_queue curl wget tar python
 elif command -v zypper &>/dev/null; then
     echo "Используется zypper..."
-    zypper install -y iptables ipset libnetfilter_queue1 curl wget tar
+    zypper install -y iptables ipset libnetfilter_queue1 curl wget tar python3
 else
     echo -e "${YELLOW}[!] Пакетный менеджер не определен. Убедитесь, что установлены iptables, ipset и libnetfilter_queue.${NC}"
 fi
@@ -61,6 +61,9 @@ cp -r "$SCRIPT_DIR/bin" "$TARGET_DIR/"
 cp -r "$SCRIPT_DIR/lists" "$TARGET_DIR/"
 cp -r "$SCRIPT_DIR/strategies" "$TARGET_DIR/"
 cp -r "$SCRIPT_DIR/scripts" "$TARGET_DIR/"
+cp -r "$SCRIPT_DIR/services" "$TARGET_DIR/" 2>/dev/null || true
+mkdir -p "$TARGET_DIR/systemd"
+cp -r "$SCRIPT_DIR/systemd/"* "$TARGET_DIR/systemd/" 2>/dev/null || true
 cp "$SCRIPT_DIR/zapret-cli" "$TARGET_DIR/"
 cp "$SCRIPT_DIR/uninstall.sh" "$TARGET_DIR/"
 chmod +x "$TARGET_DIR/uninstall.sh" 2>/dev/null || true
@@ -130,6 +133,11 @@ systemctl reset-failed zapret-linux.service 2>/dev/null || true
 systemctl enable zapret-linux.service
 systemctl restart zapret-linux.service
 
+# Применяем маппинг /etc/hosts для Meta (Instagram/Facebook) и Telegram Web
+if [ -x "$TARGET_DIR/scripts/zapret-hosts.sh" ]; then
+    "$TARGET_DIR/scripts/zapret-hosts.sh" apply >/dev/null 2>&1 || true
+fi
+
 # 6. Проверка статуса
 echo -e "${BOLD}[6/6] Проверка работы службы...${NC}"
 sleep 2
@@ -142,12 +150,12 @@ if systemctl is-active --quiet zapret-linux.service; then
     echo -e "Активная стратегия: ${CYAN}$(grep '^STRATEGY_NAME=' "$TARGET_DIR/current_strategy.conf" | cut -d'"' -f2)${NC}"
     echo
     echo -e "Теперь вы можете использовать команду ${BOLD}${GREEN}zapret-cli${NC}:"
-    echo -e "  ${BOLD}zapret-cli test${NC}              - Проверить доступность Discord и YouTube прямо сейчас"
-    echo -e "  ${BOLD}sudo zapret-cli test all${NC}     - Протестировать все 22 стратегии и выбрать работающую"
+    echo -e "  ${BOLD}zapret-cli test${NC}              - Проверить доступность всех сервисов (Discord, YouTube, Meta, TG)"
     echo -e "  ${BOLD}sudo zapret-cli switch${NC}       - Сменить стратегию обхода (интерактивное меню)"
+    echo -e "  ${BOLD}sudo zapret-cli tg on${NC}         - Включить MTProto WebSocket прокси для приложения Telegram"
+    echo -e "  ${BOLD}sudo zapret-cli hosts on/off${NC}  - Управление обходом Instagram, Facebook и TG Web"
     echo -e "  ${BOLD}sudo zapret-cli ipv6 off${NC}     - Отключить IPv6 (при ошибке cipher mismatch)"
     echo -e "  ${BOLD}zapret-cli status${NC}            - Проверить статус службы"
-    echo -e "  ${BOLD}sudo zapret-cli update-lists${NC} - Обновить списки доменов и IP от Flowseal"
     echo -e "  ${BOLD}zapret-cli log${NC}               - Смотреть лог в реальном времени"
     echo
 else

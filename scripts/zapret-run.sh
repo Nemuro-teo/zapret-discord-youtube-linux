@@ -60,6 +60,11 @@ sed -i 's/\^!/!/g' "$STRATEGY_FILE" 2>/dev/null || true
 
 source "$STRATEGY_FILE"
 
+# Применение маппинга /etc/hosts для Meta (Instagram/Facebook) и Telegram Web (если не отключено пользователем)
+if [ ! -f "$BASE_DIR/.no_hosts" ] && [ -x "$BASE_DIR/scripts/zapret-hosts.sh" ]; then
+    "$BASE_DIR/scripts/zapret-hosts.sh" apply >/dev/null 2>&1 || true
+fi
+
 # Если игровой фильтр отключен (12), убираем неиспользуемые профили для 100% совпадения с чистым Flowseal
 if [ "$GAME_FILTER_TCP" = "12" ] && [ "$GAME_FILTER_UDP" = "12" ]; then
     NFQWS_OPT="${NFQWS_OPT%%--new --filter-tcp=12*}"
