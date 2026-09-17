@@ -159,10 +159,30 @@ class TelegramProxyController:
                 except asyncio.CancelledError:
                     pass
 
+    def _collect_all_secrets(self):
+        found = set()
+        if self._secret:
+            found.add(self._secret.lower())
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        for fname in (".secret", "secret.txt"):
+            fpath = os.path.join(base_dir, fname)
+            if os.path.exists(fpath):
+                try:
+                    val = open(fpath, "r", encoding="utf-8").read().strip().lower()
+                    if val.startswith("dd") and len(val) == 34:
+                        val = val[2:]
+                    if len(val) == 32:
+                        bytes.fromhex(val)
+                        found.add(val)
+                except Exception:
+                    pass
+        return list(found)
+
     def _configure_flowseal_proxy(self):
         proxy_config.host = self._host
         proxy_config.port = int(self._port)
         proxy_config.secret = self._secret
+        proxy_config.secrets = self._collect_all_secrets()
         proxy_config.dc_redirects = {}
         proxy_config.buffer_size = 256 * 1024
         proxy_config.pool_size = 4

@@ -347,26 +347,36 @@ def _build_crypto_ctx(client_dec_prekey_iv, secret, relay_init):
     return CryptoCtx(clt_decryptor, clt_encryptor, tg_encryptor, tg_decryptor)
 
 
-async def _handle_client(reader, writer, secret: bytes):
+async def _handle_client(reader, writer, secrets: List[bytes]):
     stats.connections_total += 1
     stats.connections_active += 1
     peer = writer.get_extra_info('peername')
     label = f"{peer[0]}:{peer[1]}" if peer else "?"
 
+    default_secret = secrets[0] if secrets else bytes.fromhex(proxy_config.secret)
     set_sock_opts(writer.transport, proxy_config.buffer_size)
 
     try:
         init = await _read_client_init(
-            reader, writer, secret, label, proxy_config.fake_tls_domain)
+            reader, writer, default_secret, label, proxy_config.fake_tls_domain)
         if init is None:
             return
 
         handshake, clt_reader, clt_writer, label = init
 
-        result = _try_handshake(handshake, secret)
-        if result is None:
+        matched_secret = None
+        handshake_res = None
+        for candidate in secrets:
+            res = _try_handshake(handshake, candidate)
+            if res is not None:
+                handshake_res = res
+                matched_secret = candidate
+                break
+
+        if handshake_res is None:
             stats.connections_bad += 1
-            log.warning("[%s] bad handshake: wrong secret or proto! Expected secret: %s", label, proxy_config.secret)
+            log.warning("[%s] bad handshake: secret mismatch! Client sent unexpected key. Configured secret: %s",
+                        label, proxy_config.secret)
             try:
                 writer.close()
                 await writer.wait_closed()
@@ -374,7 +384,8 @@ async def _handle_client(reader, writer, secret: bytes):
                 pass
             return
 
-        dc, is_media, proto_tag, client_dec_prekey_iv = result
+        secret = matched_secret
+        dc, is_media, proto_tag, client_dec_prekey_iv = handshake_res
 
         if proto_tag == PROTO_TAG_ABRIDGED:
             proto_int = PROTO_ABRIDGED_INT
@@ -548,10 +559,23 @@ async def _run(stop_event: Optional[asyncio.Event] = None):
         else:
             start_cfproxy_domain_refresh()
 
-    secret_bytes = bytes.fromhex(proxy_config.secret)
+    secrets_list: List[bytes] = []
+    if proxy_config.secret:
+        try:
+            secrets_list.append(bytes.fromhex(proxy_config.secret))
+        except ValueError:
+            pass
+    if proxy_config.secrets:
+        for s_hex in proxy_config.secrets:
+            try:
+                b = bytes.fromhex(s_hex)
+                if b not in secrets_list:
+                    secrets_list.append(b)
+            except ValueError:
+                pass
 
     def client_cb(r, w):
-        task = asyncio.create_task(_handle_client(r, w, secret_bytes))
+        task = asyncio.create_task(_handle_client(r, w, secrets_list))
         _client_tasks.add(task)
         task.add_done_callback(_client_tasks.discard)
 
