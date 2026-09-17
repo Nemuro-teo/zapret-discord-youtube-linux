@@ -74,6 +74,20 @@ whatsappbusiness.com
 
 # Telegram
 telegram.org
+web.telegram.org
+webk.telegram.org
+webz.telegram.org
+weba.telegram.org
+kws1.web.telegram.org
+kws2.web.telegram.org
+kws3.web.telegram.org
+kws4.web.telegram.org
+kws5.web.telegram.org
+vesta.web.telegram.org
+flora.web.telegram.org
+pluto.web.telegram.org
+venus.web.telegram.org
+aurora.web.telegram.org
 telegram.me
 telegram.dog
 telegram.space

@@ -400,10 +400,14 @@ cmd_tg() {
             if systemctl is-active --quiet "$TG_SERVICE"; then
                 echo -e "${GREEN}[✓] Telegram MTProto WebSocket-прокси успешно запущен на 127.0.0.1:$TG_PORT${NC}"
                 echo
-                echo -e "${BOLD}Ссылка для настройки Telegram в один клик:${NC}"
+                echo -e "${BOLD}Ссылка для подключения Telegram:${NC}"
                 echo -e "${CYAN}tg://proxy?server=127.0.0.1&port=${TG_PORT}&secret=dd${secret}${NC}"
                 echo
-                echo "Нажмите на ссылку или скопируйте её в любой чат Telegram и кликните по ней."
+                echo -e "${BOLD}Как подключить Telegram Desktop:${NC}"
+                echo -e "  1. Выполните команду: ${CYAN}zapret-cli tg open${NC} (откроет окно Telegram с кнопкой Подключить)"
+                echo -e "  2. Либо кликните по ссылке tg://proxy... выше или отправьте её в Избранное"
+                echo -e "  3. Либо в Telegram: Настройки -> Продвинутые -> Тип соединения -> Добавить прокси -> MTProto:"
+                echo -e "     Хост: 127.0.0.1  |  Порт: ${TG_PORT}  |  Секрет: dd${secret}"
             else
                 echo -e "${RED}[!] Не удалось запустить службу $TG_SERVICE. Проверьте: journalctl -u $TG_SERVICE -n 20${NC}"
             fi
@@ -419,6 +423,32 @@ cmd_tg() {
             check_root
             systemctl restart "$TG_SERVICE" 2>/dev/null || true
             echo -e "${GREEN}[✓] Telegram MTProto прокси перезапущен.${NC}"
+            ;;
+        open|setup)
+            if [ -f "$SECRET_FILE" ]; then
+                local secret
+                secret=$(tr -d ' \t\r\n' < "$SECRET_FILE")
+                local link="tg://proxy?server=127.0.0.1&port=${TG_PORT}&secret=dd${secret}"
+                echo -e "Открытие диалога подключения в Telegram: ${CYAN}$link${NC}"
+                if command -v xdg-open >/dev/null 2>&1; then
+                    xdg-open "$link" 2>/dev/null &
+                elif command -v gio >/dev/null 2>&1; then
+                    gio open "$link" 2>/dev/null &
+                else
+                    echo -e "${YELLOW}[!] xdg-open не найден. Скопируйте ссылку вручную:${NC}"
+                    echo -e "${CYAN}$link${NC}"
+                fi
+            else
+                echo -e "${YELLOW}[!] Прокси ещё не был запущен. Сначала выполните: sudo zapret-cli tg on${NC}"
+            fi
+            ;;
+        log)
+            local logfile="$BASE_DIR/services/tg-ws-proxy/proxy.log"
+            if [ -f "$logfile" ]; then
+                tail -f "$logfile"
+            else
+                journalctl -u "$TG_SERVICE" -f
+            fi
             ;;
         link)
             if [ -f "$SECRET_FILE" ]; then
@@ -445,8 +475,10 @@ cmd_tg() {
             echo
             echo "Управление:"
             echo "  sudo zapret-cli tg on        # Запустить Telegram MTProto-прокси"
-            echo "  sudo zapret-cli tg off       # Остановить прокси"
+            echo "  zapret-cli tg open           # Открыть диалог подключения в приложении Telegram"
             echo "  zapret-cli tg link           # Получить ссылку подключения tg://proxy..."
+            echo "  zapret-cli tg log            # Смотреть лог подключений в реальном времени"
+            echo "  sudo zapret-cli tg off       # Остановить прокси"
             ;;
     esac
 }
@@ -531,6 +563,15 @@ cmd_test_current() {
             fi
         fi
     done
+
+    if systemctl is-active --quiet "zapret-tg-proxy.service" 2>/dev/null; then
+        printf "  %-32s : " "Telegram Desktop Proxy"
+        if nc -z -w 2 127.0.0.1 1443 2>/dev/null || (exec 3<>/dev/tcp/127.0.0.1/1443 && exec 3<&- && exec 3>&-) 2>/dev/null; then
+            echo -e "${GREEN}✓ OK${NC} (127.0.0.1:1443 активен)"
+        else
+            echo -e "${RED}✗ FAIL${NC} (порт 1443 не отвечает)"
+        fi
+    fi
 
     echo
     if [ "$all_ok" -eq 1 ]; then
@@ -881,7 +922,7 @@ cmd_help() {
     echo
     echo "Сетевые настройки и дополнительные обходы:"
     echo "  hosts [status|on|off]  Обход блокировок Meta (Instagram, Facebook) и Telegram Web"
-    echo "  tg [on|off|status|link] Встроенный MTProto WebSocket прокси для приложения Telegram"
+    echo "  tg [on|off|status|link|open|log] Встроенный MTProto WebSocket прокси для Telegram"
     echo "  ipv6 [status|off|on]   Проверить или отключить IPv6 (решает ERR_SSL_VERSION_...)"
     echo "  game-filter            Настройка игрового фильтра (порты игр 1024-65535)"
     echo "  update-lists           Скачать свежие списки IP и доменов от Flowseal"
@@ -892,7 +933,9 @@ cmd_help() {
     echo "  zapret-cli test                 # Проверить доступность всех сервисов"
     echo "  sudo zapret-cli hosts on        # Включить обход Instagram, Facebook и TG Web"
     echo "  sudo zapret-cli tg on           # Запустить Telegram MTProto-прокси"
+    echo "  zapret-cli tg open              # Открыть подключение прокси в приложении Telegram"
     echo "  zapret-cli tg link              # Получить ссылку tg://proxy для Telegram"
+    echo "  zapret-cli tg log               # Смотреть лог подключений Telegram прокси"
     echo "  sudo zapret-cli test all        # Авто-тест ВСЕХ стратегий с таблицей результатов"
     echo "  sudo zapret-cli switch alt13     # Быстро включить стратегию ALT13"
     echo "  sudo zapret-cli uninstall       # Полное удаление из системы"

@@ -162,7 +162,7 @@ class TelegramProxyController:
         proxy_config.host = self._host
         proxy_config.port = int(self._port)
         proxy_config.secret = self._secret
-        proxy_config.dc_redirects = {2: "149.154.167.220", 4: "149.154.167.220"}
+        proxy_config.dc_redirects = {}
         proxy_config.buffer_size = 256 * 1024
         proxy_config.pool_size = 4
         proxy_config.fallback_cfproxy = True
@@ -189,11 +189,19 @@ class TelegramProxyController:
         return value
 
 
-def load_or_create_secret(path):
+DEFAULT_SECRET_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "secret.txt"
+)
+
+
+def load_or_create_secret(path=DEFAULT_SECRET_FILE):
     try:
-        value = open(path, "r", encoding="utf-8").read().strip()
-        if TelegramProxyController._normalize_secret(value) == value:
-            return value
+        if os.path.exists(path):
+            value = open(path, "r", encoding="utf-8").read().strip()
+            if value.startswith("dd") and len(value) == 34:
+                value = value[2:]
+            if TelegramProxyController._normalize_secret(value) == value:
+                return value
     except (OSError, TelegramProxyError):
         pass
     secret = os.urandom(16).hex()
@@ -215,6 +223,23 @@ def serve(port=TGPROXY_PORT, secret="", ready_file=None):
     module-global state, so a fresh process per proxy run is cleaner than
     restarting a thread in a long-lived worker. Writes its PID to ready_file
     once the listener is up."""
+    if not secret:
+        secret = load_or_create_secret(DEFAULT_SECRET_FILE)
+
+    log_dir = os.path.dirname(os.path.abspath(__file__))
+    log_file = os.path.join(log_dir, "proxy.log")
+    try:
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s [%(levelname)s] %(message)s',
+            handlers=[
+                logging.StreamHandler(sys.stdout),
+                logging.FileHandler(log_file, encoding='utf-8')
+            ]
+        )
+    except Exception:
+        pass
+
     controller = TelegramProxyController()
     try:
         controller.start(port, secret)
@@ -226,6 +251,7 @@ def serve(port=TGPROXY_PORT, secret="", ready_file=None):
             with open(ready_file, "w", encoding="utf-8") as f:
                 f.write("%s\n" % os.getpid())
         print("READY %s:%s" % (TGPROXY_HOST, int(port)), flush=True)
+        print("LINK %s" % make_proxy_link(port, secret), flush=True)
         while True:
             time.sleep(1.0)
     except KeyboardInterrupt:
