@@ -430,14 +430,17 @@ cmd_tg() {
                 secret=$(tr -d ' \t\r\n' < "$SECRET_FILE")
                 local link="tg://proxy?server=127.0.0.1&port=${TG_PORT}&secret=dd${secret}"
                 echo -e "Открытие диалога подключения в Telegram: ${CYAN}$link${NC}"
-                if command -v xdg-open >/dev/null 2>&1; then
+                if [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+                    runuser -u "$SUDO_USER" -- xdg-open "$link" 2>/dev/null &
+                elif command -v xdg-open >/dev/null 2>&1; then
                     xdg-open "$link" 2>/dev/null &
                 elif command -v gio >/dev/null 2>&1; then
                     gio open "$link" 2>/dev/null &
-                else
-                    echo -e "${YELLOW}[!] xdg-open не найден. Скопируйте ссылку вручную:${NC}"
-                    echo -e "${CYAN}$link${NC}"
                 fi
+                echo
+                echo -e "${BOLD}Если окно не появилось, настройте в приложении Telegram вручную:${NC}"
+                echo -e "  Настройки -> Продвинутые -> Тип соединения -> Использовать свой прокси -> MTProto:"
+                echo -e "  Хост: ${CYAN}127.0.0.1${NC}  |  Порт: ${CYAN}${TG_PORT}${NC}  |  Секрет: ${CYAN}dd${secret}${NC}"
             else
                 echo -e "${YELLOW}[!] Прокси ещё не был запущен. Сначала выполните: sudo zapret-cli tg on${NC}"
             fi
@@ -461,8 +464,17 @@ cmd_tg() {
             ;;
         status|*)
             echo -e "${BOLD}=== Telegram Desktop MTProto WebSocket Proxy ===${NC}"
+            local is_port_open=0
+            if (exec 3<>/dev/tcp/127.0.0.1/$TG_PORT && exec 3<&- && exec 3>&-) 2>/dev/null || nc -z -w 1 127.0.0.1 $TG_PORT 2>/dev/null; then
+                is_port_open=1
+            fi
             if systemctl is-active --quiet "$TG_SERVICE" 2>/dev/null; then
-                echo -e "Состояние          : ${GREEN}АКТИВЕН (работает)${NC}"
+                if [ "$is_port_open" -eq 1 ]; then
+                    echo -e "Состояние          : ${GREEN}АКТИВЕН (работает, порт $TG_PORT слушает)${NC}"
+                else
+                    echo -e "Состояние          : ${RED}ОШИБКА (служба запущена, но порт $TG_PORT закрыт!)${NC}"
+                    echo -e "${YELLOW}Смотрите ошибки: journalctl -u $TG_SERVICE -n 20${NC}"
+                fi
                 echo -e "Адрес прокси       : ${CYAN}127.0.0.1:$TG_PORT${NC}"
                 if [ -f "$SECRET_FILE" ]; then
                     local secret

@@ -5,6 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+WorkingDirectory=/opt/zapret-linux/services/tg-ws-proxy
 ExecStart=/usr/bin/python3 /opt/zapret-linux/services/tg-ws-proxy/tgproxy.py 1443
 Restart=always
 RestartSec=3

@@ -30,22 +30,28 @@ echo
 echo -e "${BOLD}[1/6] Проверка и установка системных пакетов...${NC}"
 if command -v dnf &>/dev/null; then
     echo "Используется dnf (РЕД ОС / Fedora / CentOS)..."
-    dnf install -y iptables ipset libnetfilter_queue curl wget tar python3
+    dnf install -y iptables ipset libnetfilter_queue curl wget tar python3 python3-cryptography python3-pip || dnf install -y iptables ipset libnetfilter_queue curl wget tar python3
 elif command -v yum &>/dev/null; then
     echo "Используется yum..."
-    yum install -y iptables ipset libnetfilter_queue curl wget tar python3
+    yum install -y iptables ipset libnetfilter_queue curl wget tar python3 python3-cryptography python3-pip || yum install -y iptables ipset libnetfilter_queue curl wget tar python3
 elif command -v apt-get &>/dev/null; then
     echo "Используется apt-get (Ubuntu / Debian)..."
     apt-get update -qq || true
-    apt-get install -y --no-install-recommends iptables ipset libnetfilter-queue1 curl wget tar python3
+    apt-get install -y --no-install-recommends iptables ipset libnetfilter-queue1 curl wget tar python3 python3-cryptography python3-pip || apt-get install -y --no-install-recommends iptables ipset libnetfilter-queue1 curl wget tar python3
 elif command -v pacman &>/dev/null; then
     echo "Используется pacman (Arch Linux / CachyOS)..."
-    pacman -Sy --needed --noconfirm iptables ipset libnetfilter_queue curl wget tar python
+    pacman -Sy --needed --noconfirm iptables ipset libnetfilter_queue curl wget tar python python-cryptography python-pip || pacman -Sy --needed --noconfirm iptables ipset libnetfilter_queue curl wget tar python
 elif command -v zypper &>/dev/null; then
     echo "Используется zypper..."
-    zypper install -y iptables ipset libnetfilter_queue1 curl wget tar python3
+    zypper install -y iptables ipset libnetfilter_queue1 curl wget tar python3 python3-cryptography python3-pip || zypper install -y iptables ipset libnetfilter_queue1 curl wget tar python3
 else
-    echo -e "${YELLOW}[!] Пакетный менеджер не определен. Убедитесь, что установлены iptables, ipset и libnetfilter_queue.${NC}"
+    echo -e "${YELLOW}[!] Пакетный менеджер не определен. Убедитесь, что установлены iptables, ipset, libnetfilter_queue и python3.${NC}"
+fi
+
+# Проверка модуля cryptography для Telegram MTProto-прокси
+if ! python3 -c "import cryptography" &>/dev/null; then
+    echo "Установка модуля cryptography через pip3..."
+    pip3 install cryptography 2>/dev/null || true
 fi
 
 # 2. Копирование файлов в целевую директорию
