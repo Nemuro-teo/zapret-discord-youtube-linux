@@ -18,6 +18,26 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
+NSSWITCH_FILE="/etc/nsswitch.conf"
+
+fix_nsswitch() {
+    if [ -f "$NSSWITCH_FILE" ] && grep -q "resolve.*files" "$NSSWITCH_FILE" 2>/dev/null; then
+        sed -i 's/resolve \[\!UNAVAIL=return\] files/files resolve \[\!UNAVAIL=return\]/g' "$NSSWITCH_FILE" 2>/dev/null || true
+    fi
+}
+
+restore_nsswitch() {
+    if [ -f "$NSSWITCH_FILE" ] && grep -q "files resolve \[\!UNAVAIL=return\]" "$NSSWITCH_FILE" 2>/dev/null; then
+        sed -i 's/files resolve \[\!UNAVAIL=return\]/resolve \[\!UNAVAIL=return\] files/g' "$NSSWITCH_FILE" 2>/dev/null || true
+    fi
+}
+
+flush_dns_cache() {
+    resolvectl flush-caches 2>/dev/null || true
+    systemctl restart systemd-resolved 2>/dev/null || true
+    nscd -i hosts 2>/dev/null || true
+}
+
 remove_hosts() {
     if [ ! -f "$HOSTS_FILE" ]; then
         return 0
@@ -26,6 +46,8 @@ remove_hosts() {
         # Удаляем всё от MARKER_START до MARKER_END включительно
         sed -i "/$MARKER_START/,/$MARKER_END/d" "$HOSTS_FILE" 2>/dev/null || true
     fi
+    restore_nsswitch
+    flush_dns_cache
 }
 
 apply_hosts() {
@@ -53,6 +75,9 @@ apply_hosts() {
             echo "$MARKER_END"
         } >> "$HOSTS_FILE"
     fi
+
+    fix_nsswitch
+    flush_dns_cache
 }
 
 status_hosts() {
