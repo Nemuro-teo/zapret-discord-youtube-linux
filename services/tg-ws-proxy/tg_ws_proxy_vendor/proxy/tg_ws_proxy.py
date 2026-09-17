@@ -366,10 +366,10 @@ async def _handle_client(reader, writer, secret: bytes):
         result = _try_handshake(handshake, secret)
         if result is None:
             stats.connections_bad += 1
-            log.warning("[%s] bad handshake (wrong secret or proto)", label)
+            log.warning("[%s] bad handshake: wrong secret or proto! Expected secret: %s", label, proxy_config.secret)
             try:
-                while await clt_reader.read(4096):
-                    pass
+                writer.close()
+                await writer.wait_closed()
             except Exception:
                 pass
             return

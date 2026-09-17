@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
+import logging
 import os
 import sys
 import threading
@@ -190,26 +191,39 @@ class TelegramProxyController:
 
 
 DEFAULT_SECRET_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "secret.txt"
+    os.path.dirname(os.path.abspath(__file__)), ".secret"
 )
 
 
 def load_or_create_secret(path=DEFAULT_SECRET_FILE):
-    try:
-        if os.path.exists(path):
-            value = open(path, "r", encoding="utf-8").read().strip()
-            if value.startswith("dd") and len(value) == 34:
-                value = value[2:]
-            if TelegramProxyController._normalize_secret(value) == value:
-                return value
-    except (OSError, TelegramProxyError):
-        pass
+    base_dir = os.path.dirname(os.path.abspath(path))
+    candidates = [path, os.path.join(base_dir, "secret.txt")]
+    for c in candidates:
+        try:
+            if os.path.exists(c):
+                value = open(c, "r", encoding="utf-8").read().strip()
+                if value.startswith("dd") and len(value) == 34:
+                    value = value[2:]
+                if TelegramProxyController._normalize_secret(value) == value:
+                    # Sync to both files so both CLI and service match
+                    for dest in candidates:
+                        try:
+                            if not os.path.exists(dest) or open(dest, "r", encoding="utf-8").read().strip() != value:
+                                with open(dest, "w", encoding="utf-8") as f:
+                                    f.write(value)
+                        except OSError:
+                            pass
+                    return value
+        except (OSError, TelegramProxyError):
+            pass
+
     secret = os.urandom(16).hex()
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(secret)
-    except OSError:
-        pass
+    for dest in candidates:
+        try:
+            with open(dest, "w", encoding="utf-8") as f:
+                f.write(secret)
+        except OSError:
+            pass
     return secret
 
 
@@ -237,6 +251,7 @@ def serve(port=TGPROXY_PORT, secret="", ready_file=None):
                 logging.FileHandler(log_file, encoding='utf-8')
             ]
         )
+        logging.getLogger('tg-mtproto-proxy').setLevel(logging.INFO)
     except Exception:
         pass
 

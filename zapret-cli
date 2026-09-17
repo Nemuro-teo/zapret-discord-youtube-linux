@@ -381,16 +381,23 @@ cmd_tg() {
                 fi
             fi
             
-            if [ ! -f "$SECRET_FILE" ]; then
-                mkdir -p "$(dirname "$SECRET_FILE")"
+            mkdir -p "$(dirname "$SECRET_FILE")"
+            local alt_secret="$BASE_DIR/services/tg-ws-proxy/secret.txt"
+            if [ ! -f "$SECRET_FILE" ] && [ -f "$alt_secret" ]; then
+                cp "$alt_secret" "$SECRET_FILE"
+            elif [ -f "$SECRET_FILE" ] && [ ! -f "$alt_secret" ]; then
+                cp "$SECRET_FILE" "$alt_secret"
+            elif [ ! -f "$SECRET_FILE" ]; then
                 openssl rand -hex 16 > "$SECRET_FILE" 2>/dev/null || head -c 16 /dev/urandom | xxd -p > "$SECRET_FILE" 2>/dev/null || echo "00112233445566778899aabbccddeeff" > "$SECRET_FILE"
+                cp "$SECRET_FILE" "$alt_secret" 2>/dev/null || true
             fi
             local secret
             secret=$(tr -d ' \t\r\n' < "$SECRET_FILE")
+            echo -n "$secret" > "$alt_secret" 2>/dev/null || true
             
-            if [ -f "$BASE_DIR/systemd/$TG_SERVICE" ] && [ ! -f "/etc/systemd/system/$TG_SERVICE" ]; then
-                cp "$BASE_DIR/systemd/$TG_SERVICE" "/etc/systemd/system/$TG_SERVICE"
-                systemctl daemon-reload
+            if [ -f "$BASE_DIR/systemd/$TG_SERVICE" ]; then
+                cp -f "$BASE_DIR/systemd/$TG_SERVICE" "/etc/systemd/system/$TG_SERVICE" 2>/dev/null || true
+                systemctl daemon-reload 2>/dev/null || true
             fi
             
             systemctl enable "$TG_SERVICE" 2>/dev/null || true
